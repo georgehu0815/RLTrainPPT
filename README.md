@@ -14,8 +14,8 @@
 
 ## 核心技术
 
-- **[Agentic RL Transformer (ART)](https://github.com/google-deepmind/art)**: Google DeepMind 开源的强化学习框架，用于训练智能体。本项目使用其 `GRPO` (Generative Rollout Policy Optimization) 算法对模型进行优化。
-- **[LangGraph](https://github.com/langchain-ai/langgraph)**: 一个用于构建可循环、有状态的、基于LLM的应用的库。本项目用它来构建 ReAct (Reasoning and Acting) 风格的智能体，使其能够进行思考、行动（搜索）、观察的循环。
+- **Agentic RL Transformer (ART)**: Google DeepMind 开源的强化学习框架，用于训练智能体。本项目使用其 `GRPO` (Generative Rollout Policy Optimization) 算法对模型进行优化。
+- **LangGraph**: 一个用于构建可循环、有状态的、基于LLM的应用的库。本项目用它来构建 ReAct (Reasoning and Acting) 风格的智能体，使其能够进行思考、行动（搜索）、观察的循环。
 - **智谱AI SDK (`zai-sdk`)**: 用于调用智谱的在线网页搜索API，作为智能体获取外部信息的工具。
 - **Weights & Biases (`wandb`)**: 用于记录和可视化训练过程中的指标和轨迹，方便监控和分析模型性能。
 
@@ -91,6 +91,7 @@ cp env_template .env
 执行训练脚本来启动智能体的训练过程。训练指标和结果将被记录到 Weights & Biases。
 
 ```bash
+cp env_template .env
 python LLM_cache.py   #大模型缓存代理，用于请求Openai
 python train.py
 ```
