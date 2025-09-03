@@ -5,7 +5,8 @@
 # @Author: johnson
 # @Contact : github: johnson7788
 # @Desc  : 训练“按 topic 搜索并生成 Markdown 大纲”的 LangGraph ReAct Agent（ART GRPO）
-
+import logging
+logging.basicConfig(level=logging.DEBUG)
 import os
 import uuid
 import time
@@ -37,7 +38,7 @@ MODEL_NAME = os.getenv("ART_MODEL", "Qwen/Qwen2.5-0.5B-Instruct")
 PROJECT_NAME = os.getenv("ART_PROJECT", "web-search-outline-training")
 USE_LOCAL_BACKEND = os.getenv("ART_BACKEND", "local").lower() == "local"
 
-print(f"{NAME} - {MODEL_NAME} - {PROJECT_NAME}")
+print(f"{NAME} - {MODEL_NAME} - {PROJECT_NAME} - {os.environ['WANDB_BASE_URL']}")
 
 # RULER 评估模型（可选；需相应 API Key）
 RULER_MODEL = os.getenv("RULER_MODEL", "openai/o4-mini")
@@ -77,7 +78,7 @@ async def search_web(keyword: str) -> List[WebSearchResult]:
     response = WebSearchClient.web_search.web_search(
         search_engine="search_std",
         search_query=keyword,
-        count=15,
+        count=4,
         search_recency_filter="noLimit",
         content_size="high"
     )
