@@ -1,113 +1,160 @@
 # RLTrainPPT: 基于强化学习的PPT Agent 训练模型
 
 ## 目标
-- 训练PPT大纲Agent： 根据主题，使用web search经过多轮搜索，生成符合大纲。
-- 训练PPT内容Agent： 根据大纲整体和每一页的需求，使用web search和图片搜索，生成符合格式要求的PPT内容，主要是来源可靠，格式正确。
+- **训练PPT大纲Agent**: 根据输入的主题，通过多轮网络搜索，自动生成结构合理、内容丰富的PPT大纲。
+- **训练PPT内容Agent**: 根据给定的大纲，通过网络搜索和图片搜索，自动填充每页PPT的具体内容，确保来源可靠、格式正确。
 
+## 项目组件
 
-## 训练PPT生成大纲
-[ART_Langgraph_outline](backend/ART_Langgraph_outline)
+- **[LLMCache](backend/LLMCache)**: 一个为大语言模型（LLM）请求提供缓存和代理的服务。主要用于在国内环境中稳定访问OpenAI等外部API，并缓存请求结果以节约成本和时间。
 
-## 训练PPT内容Agent描述
-[ART_Langgraph_content](backend/ART_Langgraph_content)
-一个能够自动完成PPT内容研究与填充的AI智能体。该智能体接收一个结构化的PPT大纲（JSON格式），通过强化学习（Reinforcement Learning）进行训练，学会使用网络搜索工具来查找相关信息，填充大纲中的细节内容，并提供引用来源，最终输出一个内容详实、结构完整的PPT内容JSON。
+- **[Clash代理](backend/clash)**: 一个Clash容器化配置，为`LLMCache`和其他需要访问外部网络的服务提供稳定的网络代理。
+
+- **[训练PPT生成大纲 (ART_Langgraph_outline)](backend/ART_Langgraph_outline)**: 接收一个主题（Topic），通过强化学习训练一个能够进行多轮网络搜索、分析、总结，并最终生成一个结构化Markdown大纲的智能体。
+
+- **[训练PPT内容Agent (ART_Langgraph_content)](backend/ART_Langgraph_content)**: 接收一个结构化的PPT大纲（JSON格式），通过强化学习训练一个能够自动研究和填充内容的智能体。它会为大纲的每个要点进行网络搜索，生成详细文本，并附上引用来源。
 
 ## 核心技术
 
-- **Agentic RL Transformer (ART)**: Google DeepMind 开源的强化学习框架，用于训练智能体。本项目使用其 `GRPO` (Generative Rollout Policy Optimization) 算法对模型进行优化。
-- **LangGraph**: 一个用于构建可循环、有状态的、基于LLM的应用的库。本项目用它来构建 ReAct (Reasoning and Acting) 风格的智能体，使其能够进行思考、行动（搜索）、观察的循环。
-- **智谱AI SDK (`zai-sdk`)**: 用于调用智谱的在线网页搜索API，作为智能体获取外部信息的工具。
-- **Weights & Biases (`wandb`)**: 用于记录和可视化训练过程中的指标和轨迹，方便监控和分析模型性能。
+- **Agentic RL Transformer (ART)**: Google DeepMind开源的强化学习框架，本项目使用其 `GRPO` (Generative Rollout Policy Optimization) 算法对模型进行优化。
+- **LangGraph**: 一个用于构建可循环、有状态的、基于LLM的应用的库。本项目用它来构建 ReAct (Reasoning and Acting) 风格的智能体。
+- **智谱AI SDK (`zhipuai`)**: 作为智能体获取外部信息的网页搜索工具。
+- **Weights & Biases (`wandb`)**: 用于记录和可视化训练过程，方便监控和分析模型性能。
 
 ## 工作流程
 
-项目的核心工作流程如下：
-
-1.  **输入**: 提供一个结构化的PPT大纲JSON。该大纲定义了每页幻灯片的类型（如封面、目录、内容页）和标题，但具体内容是待填充的占位符（例如 `"text": "Detailed content about..."`）。
+### 1. 大纲生成 (Outline Generation)
+1.  **输入**: 用户提供一个PPT主题，例如“AIGC在医疗影像的应用趋势”。
 2.  **智能体处理 (`Rollout`)**:
-    -   智能体接收大纲，并根据系统指令（System Prompt）开始工作。
-    -   它会遍历大纲中的每一个待填充项。
-    -   针对每一项，它会生成一个精确的搜索查询，并调用 `web_search_tool` 工具。
-    -   它分析搜索结果，提炼出关键信息，生成2-4句话的文本内容。
-    -   在生成的文本末尾，它会附上来源引用标记，如 `[1]`, `[2]`。
-    -   它将填充好的内容放回原始JSON结构中，确保结构不被破坏。
-3.  **输出**: 智能体调用 `return_filled_outline_tool` 工具，返回一个包含所有填充内容和引用URL列表的完整JSON。
-4.  **奖励计算**: 系统会根据输出结果的质量计算奖励分数。奖励函数综合考虑了以下几个方面：
-    -   **格式奖励 (`format_reward`)**: 检查输出是否保持了原始结构、文本是否被有效填充、引用标记是否正确使用。
-    -   **搜索奖励 (`search_reward`)**: 评估引用来源的多样性、内容是否包含具体数据（如数字、年份）、以及引用标记是否与来源列表一致。
-5.  **模型训练**: `art` 框架根据计算出的奖励，使用 `GRPO` 算法对模型进行微调，使其在后续任务中表现得更好。
+    -   智能体接收主题，并生成多个搜索查询。
+    -   调用`web_search_tool`工具执行搜索，并分析结果。
+    -   基于搜索结果，生成一个结构化的Markdown大纲，包含标题、5个一级部分、每个一级部分下设3-4个二级小节，以及每个小节的要点。
+    -   调用`return_final_outline_tool`工具返回最终的大纲和参考的URL列表。
+3.  **奖励计算**: 系统根据输出大纲的结构完整性、内容相关性、来源多样性等维度计算奖励。
+4.  **模型训练**: `art`框架根据奖励使用`GRPO`算法对模型进行微调。
+
+### 2. 内容填充 (Content Filling)
+1.  **输入**: 提供一个结构化的PPT大纲JSON，其中`text`字段为待填充的占位符。
+2.  **智能体处理 (`Rollout`)**:
+    -   智能体遍历大纲中的每一个待填充项。
+    -   针对每一项生成精确的搜索查询，并调用`web_search_tool`。
+    -   分析搜索结果，提炼关键信息，生成2-4句话的文本内容，并在末尾附上引用标记（如`[1]`, `[2]`）。
+    -   将填充好的内容放回原始JSON结构中。
+3.  **输出**: 智能体调用`return_filled_outline_tool`工具，返回包含所有填充内容和引用URL列表的完整JSON。
+4.  **奖励计算**: 系统根据输出的格式一致性、内容填充完整度、引用标注准确性、来源多样性等计算奖励。
+5.  **模型训练**: `art`框架根据奖励再次对模型进行微调。
 
 ## 项目结构
 
 ```
 RLTrainPPT/
 ├── backend/
-│   └── ART_Langgraph_content/
-│       ├── train.py         # 核心训练脚本
-│       ├── model_test.py    # 用于测试已训练模型的推理能力
-│       ├── requirements.txt # Python依赖包
-│       └── ...
-├── ART/                     # ART 框架（可能作为子模块）
-└── README.md                # 本文件
+│   ├── LLMCache/              # LLM 缓存与代理服务
+│   ├── clash/                 # 网络代理容器
+│   ├── ART_Langgraph_outline/ # PPT 大纲生成 Agent
+│   └── ART_Langgraph_content/ # PPT 内容填充 Agent
+├── ART/                       # ART 框架 (子模块)
+└── README.md                  # 本文件
 ```
 
 ## 快速开始
 
 ### 1. 环境准备
+-   Python 3.10 或更高版本。
+-   Docker (用于运行 `clash` 代理)。
+-   智谱AI API密钥。
+-   (可选) OpenAI API密钥。
 
--   确保您已安装 Python 3.10 或更高版本。
--   一个能够调用智谱API的密钥。
+### 2. 启动依赖服务 (代理和缓存)
 
-### 2. 安装
-
+#### a. 启动Clash代理 (如果需要)
+如果你的环境无法直接访问OpenAI等服务，请先配置和启动Clash代理。
 ```bash
-# 1. 克隆仓库
-git clone https://github.com/johnson7788/RLTrainPPT
+cd backend/clash
 
-cd RLTrainPPT
+# 替换 config.yaml 为你自己的Clash配置文件
+# cp /path/to/your/config.yaml ./config.yaml
 
-# 2. 进入后端代码目录
-cd backend/ART_Langgraph_content
+# 启动clash服务
+./clash-linux-amd64-v1.10.0 -d .
 
-# 3. (推荐) 创建并激活虚拟环境
+# 或者使用Docker
+# docker build -t clash .
+# docker run -p 7890:7890 -p 9090:9090 clash
+```
+
+#### b. 启动LLMCache服务
+该服务为后续的Agent训练提供统一的LLM接口和缓存。
+```bash
+cd backend/LLMCache
+
+# (推荐) 创建并激活虚拟环境
 python -m venv venv
-source venv/bin/activate  # macOS/Linux
+source venv/bin/activate
 
-# 4. 安装依赖
+# 安装依赖
 pip install -r requirements.txt
-```
 
-### 3. 配置环境变量
-
-在 `backend/ART_Langgraph_content` 目录下创建一个 `.env` 文件，并填入必要的密钥信息。
-```
+# 配置环境变量 (拷贝并修改.env文件)
 cp env_template .env
+# 在.env文件中填入你的API密钥和代理地址
+# OPENAI_API_KEY=sk-proj-xxx
+# ZHIPU_API_KEY=xxxxx
+# HTTP_PROXY=http://127.0.0.1:7890
+# HTTPS_PROXY=http://127.0.0.1:7890
+
+# 启动缓存服务
+python LLM_cache.py
 ```
 
-### 4. 运行项目
-
-#### 训练模型
-
-执行训练脚本来启动智能体的训练过程。训练指标和结果将被记录到 Weights & Biases。
-
+### 3. 训练PPT大纲Agent
 ```bash
+cd backend/ART_Langgraph_outline
+
+# (推荐) 创建并激活虚拟环境
+python -m venv venv
+source venv/bin/activate
+
+# 安装依赖
+pip install -r requirements.txt
+
+# 配置环境变量
 cp env_template .env
-python LLM_cache.py   #大模型缓存代理，用于请求Openai
+# 在.env中填入Wandb和API密钥信息
+
+# 运行训练
 python train.py
-```
 
-#### 测试模型
-
-训练完成后，可以执行测试脚本来验证模型是否能根据指令（例如：“Who is the CFO of Tesla?”）正确调用工具并返回结果。
-
-```bash
+# 运行测试
 python model_test.py
 ```
 
-#### 训练完成后的模型如何使用
-- 合并训练后的lora模型。
-- 使用ollama或者vllm加载模型，注意兼容Openai模式。
-- 使用litellm调用ollamma或者vllm的接口地址。
+### 4. 训练PPT内容Agent
+```bash
+cd backend/ART_Langgraph_content
+
+# (推荐) 创建并激活虚拟环境
+python -m venv venv
+source venv/bin/activate
+
+# 安装依赖
+pip install -r requirements.txt
+
+# 配置环境变量
+cp env_template .env
+# 在.env中填入Wandb和API密钥信息
+
+# 运行训练
+python train.py
+
+# 运行测试
+python model_test.py
+```
+
+### 5. 使用训练完成的模型
+- 合并训练后生成的LoRA模型与基础模型。
+- 使用Ollama或VLLM等工具加载合并后的模型，并以兼容OpenAI的模式提供API服务。
+- 在你的应用程序中，通过LiteLLM等库调用该模型服务接口。
 
 ## 有任何问题联系我
 ![weichat.png](doc/weichat.png)
