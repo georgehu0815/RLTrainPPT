@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PPT 大纲生成测试</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 2rem; background-color: #f7f7f7; color: #333; }
+        .container { max-width: 800px; margin: auto; background: #fff; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        h1, h2 { text-align: center; }
+        textarea { width: 100%; padding: 0.5rem; font-size: 1rem; border-radius: 4px; border: 1px solid #ddd; box-sizing: border-box; min-height: 80px; margin-bottom: 1rem; }
+        .examples { margin-top: 1.5rem; }
+        .examples h3 { margin-bottom: 0.5rem; color: #555;}
+        .example-btn { cursor: pointer; background-color: #eef4ff; color: #4a7cff; border: 1px solid #d4e2ff; padding: 0.5rem 1rem; border-radius: 20px; margin: 0.25rem; display: inline-block; transition: background-color 0.2s; font-size: 0.9rem; }
+        .example-btn:hover { background-color: #dbe8ff; }
+        .generate-btn { display: block; width: 100%; padding: 0.8rem; font-size: 1.1rem; background-color: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 1rem; }
+        .generate-btn:hover { background-color: #218838; }
+        .output-area { margin-top: 2rem; background-color: #f0f0f0; padding: 1rem; border-radius: 4px; white-space: pre-wrap; font-family: 'Courier New', Courier, monospace; min-height: 100px; }
+        .note { font-size: 0.9rem; color: #666; text-align: center; margin-top: 1rem; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>PPT 大纲生成测试</h1>
+    <p class="note">这是一个用于测试大纲生成模型的前端界面。请在下方输入框中输入一个主题，或点击示例主题进行快速测试。</p>
+
+    <textarea id="topic-input" placeholder="在此输入您想生成的PPT主题..."></textarea>
+
+    <div class="examples">
+        <h3>或者，尝试点击一个示例主题：</h3>
+        <div id="example-topics">
+            <!-- Example topics will be injected here by JS -->
+        </div>
+    </div>
+
+    <button class="generate-btn" onclick="generateOutline()">生成大纲</button>
+    
+    <div class="output-area">
+        <h2>生成结果</h2>
+        <pre id="output-content">此处将显示生成的大纲...</pre>
+    </div>
+    <p class="note">注意：此页面仅为UI原型。实际的模型运行需要通过执行 `backend/ART_Langgraph_outline/model_test.py` 脚本来完成。</p>
+</div>
+
+<script>
+    const exampleTopics = [
+        "AIGC 在医疗影像的应用与合规",
+        "边缘计算在智能制造的实施路径",
+        "量子计算基础与典型算法概览",
+        "RAG 在企业知识库的效果评估",
+        "2025年新能源汽车市场趋势分析"
+    ];
+
+    const topicInput = document.getElementById('topic-input');
+    const examplesContainer = document.getElementById('example-topics');
+
+    // Populate example topics
+    exampleTopics.forEach(topic => {
+        const btn = document.createElement('span');
+        btn.className = 'example-btn';
+        btn.textContent = topic;
+        btn.onclick = () => {
+            topicInput.value = topic;
+            topicInput.focus();
+        };
+        examplesContainer.appendChild(btn);
+    });
+
+    function generateOutline() {
+        const topic = topicInput.value;
+        const outputContent = document.getElementById('output-content');
+        if (!topic.trim()) {
+            alert('请输入一个主题！');
+            return;
+        }
+        
+        outputContent.textContent = `正在为主题 "${topic}" 生成大纲...\n\n（这是一个UI演示，实际生成请运行后端脚本）`;
+        
+        // In a real application, you would make an API call to a backend server here.
+        // For example:
+        // fetch('/api/generate-outline', {
+        //     method: 'POST',
+        //     headers: { 'Content-Type': 'application/json' },
+        //     body: JSON.stringify({ topic: topic })
+        // })
+        // .then(response => response.json())
+        // .then(data => {
+        //     outputContent.textContent = data.outline;
+        // })
+        // .catch(error => {
+        //     console.error('Error:', error);
+        //     outputContent.textContent = '生成失败，请查看控制台日志。';
+        // });
+    }
+</script>
+
+</body>
+</html>

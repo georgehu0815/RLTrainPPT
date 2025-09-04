@@ -2,3 +2,4 @@ zai-sdk
 langgraph
 langchain_core
 torchtune
+vllm==0.9.2
