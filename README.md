@@ -67,6 +67,8 @@ RLTrainPPT/
 -   Docker (用于运行 `clash` 代理)。
 -   智谱AI API密钥。
 -   (可选) OpenAI API密钥。
+详细参考文档：
+[prepare.md](doc/prepare.md)
 
 ### 2. 启动依赖服务 (代理和缓存)
 
@@ -154,10 +156,33 @@ python train.py
 python model_test.py
 ```
 
-### 5. 使用训练完成的模型
-- 合并训练后生成的LoRA模型与基础模型。
-- 使用Ollama或VLLM等工具加载合并后的模型，并以兼容OpenAI的模式提供API服务。
-- 在你的应用程序中，通过LiteLLM等库调用该模型服务接口。
+### 5. 在PPT中使用训练完成的模型
+- 合并训练后生成的LoRA模型与基础模型, 使用程序：[merge_lora.py](doc/merge_lora.py)
+- 进入容器，使用Ollama或VLLM等工具加载合并后的模型，并以兼容OpenAI的模式提供API服务。 
+```bash
+# 进入合并后的模型目录的上一级，然后使用vllm运行该模型
+python -m vllm.entrypoints.openai.api_server --host 0.0.0.0 --model qwen2.5-7b-contentmodel
+# 测试模型
+curl http://localhost:8000/v1/chat/completions \
+  -H "Authorization: Bearer token-abc123" -H "Content-Type: application/json" \
+  -d '{
+    "model":"qwen2.5-7b-contentmodel",
+    "messages":[{"role":"user","content":"你好！"}]
+  }'
+
+curl http://localhost:8000/v1/completions     -H "Content-Type: application/json"     -d '{"model": "qwen2.5-7b-contentmodel","prompt": "你好", "max_tokens": 100,"temperature": 0}'
+输出:
+{"id":"chatcmpl-b8b7c3c2d82c4241bebe1c7bec94c9b2","object":"chat.completion","created":1756992891,"model":"qwen2.5-7b-contentmodel","choices":[{"index":0,"message":{"role":"assistant","reasoning_content":null,"content":"你好！很高兴为你服务。有什么我可以帮助你的吗？","tool_calls":[]},"logprobs":null,"finish_reason":"stop","stop_reason":null}],"usage":{"prompt_tokens":31,"total_tokens":44,"completion_tokens":13,"prompt_tokens_details":null},"prompt_logprobs":null}
+
+```
+- 在TrainPPTAgent程序中，通过LiteLLM客户端库调用该模型服务接口。
+```bash
+编辑backend/simpleOutline/.env
+MODEL_PROVIDER=vllm
+LLM_MODEL=qwen2.5-7b-contentmodel
+VLLM_API_KEY=EMPTY
+VLLM_API_URL=http://127.0.0.1:8000/v1
+```
 
 ## 有任何问题联系我
 ![weichat.png](doc/weichat.png)
