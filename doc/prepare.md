@@ -1,6 +1,9 @@
 ## 服务器准备
 可以尝试[智星云](https://gpu.ai-galaxy.cn/)的按小时租赁服务器，前期拉取镜像期间可以不用GPU。
 
+## 仓库的ART的地址
+https://github.com/johnson7788/RLTrainPPT
+
 ## 准备服务器上的clash代理
 登录服务器，然后使用screen命令运行clash
 ```
