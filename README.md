@@ -72,7 +72,7 @@ RLTrainPPT/
 
 ### 2. 启动依赖服务 (代理和缓存)
 
-#### a. 启动Clash代理 (如果需要)
+#### 1. 启动Clash代理 (如果需要)
 如果你的环境无法直接访问OpenAI等服务，请先配置和启动Clash代理。
 ```bash
 cd backend/clash
@@ -88,7 +88,7 @@ cd backend/clash
 # docker run -p 7890:7890 -p 9090:9090 clash
 ```
 
-#### b. 启动LLMCache服务
+#### 2. 启动LLMCache服务
 该服务为后续的Agent训练提供统一的LLM接口和缓存。
 ```bash
 cd backend/LLMCache
