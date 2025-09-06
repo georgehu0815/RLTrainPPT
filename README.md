@@ -112,7 +112,7 @@ cp env_template .env
 python LLM_cache.py
 ```
 
-### 3. 训练PPT大纲Agent
+#### 3. 训练PPT大纲Agent
 ```bash
 cd backend/ART_Langgraph_outline
 
@@ -134,7 +134,7 @@ python train.py
 python model_test.py
 ```
 
-### 4. 训练PPT内容Agent
+#### 4. 训练PPT内容Agent
 ```bash
 cd backend/ART_Langgraph_content
 
@@ -156,7 +156,7 @@ python train.py
 python model_test.py
 ```
 
-### 5. 在PPT中使用训练完成的模型
+#### 5. 在PPT中使用训练完成的模型
 - 合并训练后生成的LoRA模型与基础模型, 使用程序：[merge_lora.py](doc/merge_lora.py)
 - 进入容器，使用Ollama或VLLM等工具加载合并后的模型，并以兼容OpenAI的模式提供API服务。 
 ```bash
