@@ -13,6 +13,8 @@
 
 - **[Clash代理](backend/clash)**: 一个Clash容器化配置，为`LLMCache`和其他需要访问外部网络的服务提供稳定的网络代理。
 
+- **[可以使用OneAPI服务代替上面的2个服务]**: https://github.com/songquanpeng/one-api 对于国内训练环境，可以使用OneAPI（部署到国外服务器）来代替上面的2个服务。
+
 - **[训练PPT生成大纲 (ART_Langgraph_outline)](backend/ART_Langgraph_outline)**: 接收一个主题（Topic），通过强化学习训练一个能够进行多轮网络搜索、分析、总结，并最终生成一个结构化Markdown大纲的智能体。
 
 - **[训练PPT内容Agent (ART_Langgraph_content)](backend/ART_Langgraph_content)**: 接收一个结构化的PPT大纲（JSON格式），通过强化学习训练一个能够自动研究和填充内容的智能体。它会为大纲的每个要点进行网络搜索，生成详细文本，并附上引用来源。
