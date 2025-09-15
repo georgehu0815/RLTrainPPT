@@ -29,6 +29,7 @@ from tenacity import retry, stop_after_attempt
 from litellm import acompletion
 from zai import ZhipuAiClient
 from art.rewards import ruler_score_group
+from transformers import AutoTokenizer
 
 # ---------------- wandb ----------------
 import wandb
@@ -55,6 +56,62 @@ WANDB_ENTITY = os.getenv("WANDB_ENTITY")
 WANDB_RUN_NAME = os.getenv("WANDB_RUN_NAME", f"{NAME}-{time.strftime('%Y%m%d-%H%M%S')}")
 
 WebSearchClient = ZhipuAiClient(api_key=os.environ["ZHIPU_API_KEY"])
+
+tok = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
+
+# --- 用于裁剪Context，当长度比较长的时候
+def _msg_text(m):
+    """将各种消息对象（dict / LangChain Message / OpenAI Choice / 其它）统一成 'role: content' 文本。"""
+    # 1) dict 消息：用 dict.get
+    if isinstance(m, dict):
+        role = m.get("role", "") or m.get("type", "")
+        content = m.get("content", "") or ""
+        return f"{role or 'msg'}: {content}"
+
+    # 2) OpenAI ChatCompletion Choice（或类似对象）：有 message 且 message.content
+    #    采用鸭子类型判断，避免显式依赖 openai 的类型
+    if hasattr(m, "message") and hasattr(getattr(m, "message"), "content"):
+        role = "assistant"
+        content = getattr(getattr(m, "message"), "content", "") or ""
+        return f"{role}: {content}"
+
+    # 3) 其它（如 LangChain 的 HumanMessage/SystemMessage 等）
+    role = getattr(m, "type", None) or getattr(m, "role", "") or ""
+    content = getattr(m, "content", "") or ""
+    return f"{role or 'msg'}: {content}"
+
+def _tokens_len(text: str) -> int:
+    return len(tok(text, add_special_tokens=False, return_attention_mask=False)["input_ids"])
+
+def clip_traj_inplace(traj, max_tokens=MAX_SEQ_LEN):
+    # 对rollout的轨迹进行裁剪，保留一定长度即可，裁剪单条轨迹
+    if not getattr(traj, "messages_and_choices", None):
+        return
+    msgs = list(traj.messages_and_choices)
+    print(f"裁剪前有信息：{len(msgs)} 条")
+    # 永远保留第一个 system（如有）
+    keep_head = []
+    if msgs and ("system" in _msg_text(msgs[0]).lower()):
+        keep_head.append(msgs.pop(0))
+
+    # 从“最近”往回累加，超出则停止
+    kept_tail = []
+    for m in reversed(msgs):
+        candidate = keep_head + list(reversed(kept_tail + [m]))
+        text = "\n".join(_msg_text(x) for x in candidate)
+        if _tokens_len(text) <= max_tokens:
+            kept_tail.append(m)
+        else:
+            break
+
+    traj.messages_and_choices = keep_head + list(reversed(kept_tail))
+
+
+# 在 finished / judged 生成之后、train 之前
+def clip_group(g, max_tokens=MAX_SEQ_LEN):
+    return art.TrajectoryGroup(
+        (clip_traj_inplace(t, max_tokens) or t) for t in list(g)
+    )
 
 # ---------- 数据结构 ----------
 class WebSearchResult(BaseModel):
@@ -218,7 +275,7 @@ async def rollout(model: art.Model, web_search_scenario: WebSearchScenario) -> P
         final_outline = FinalOutline(outline=outline, source_urls=source_urls)
         return final_outline.model_dump()
 
-    tools = [web_search_tool, return_final_outline_tool]
+    tools = [search_web, return_final_outline_tool]
 
     # 用 ART 的 init_chat_model 注入可训练聊天模型
     chat_model = init_chat_model(MODEL_NAME, temperature=0.4)
@@ -361,13 +418,13 @@ async def main():
         for i, topic in enumerate(topic_data["topics"], 1)
     ]
 
-    # 训练参数
+    # 训练参数， max_steps和num_epochs的区别
     training_config = {
         "groups_per_step": 2,
         "num_epochs": 2,
         "rollouts_per_group": 4,
         "learning_rate": 1e-5,
-        "max_steps": 5,
+        "max_steps": int(os.environ.get("MAX_STEPS", 10)),
     }
 
     # wandb 数据概览
@@ -429,14 +486,15 @@ async def main():
                 except Exception:
                     # RULER 失效/异常时，退回无裁判训练
                     judged.append(art.TrajectoryGroup(t_list))
-
+            judged = [clip_group(g, MAX_SEQ_LEN) for g in judged]
             await model.train(
                 trajectory_groups=judged,
-                config=art.TrainConfig(learning_rate=training_config["learning_rate"], max_seq_len=MAX_SEQ_LEN),
+                config=art.TrainConfig(learning_rate=training_config["learning_rate"]),
                 _config={"logprob_calculation_chunk_size": 8},
             )
             wandb.log({"train/used_judged_groups": 1}, step=batch.step)
         else:
+            finished = [clip_group(g, MAX_SEQ_LEN) for g in finished]
             await model.train(
                 trajectory_groups=finished,
                 config=art.TrainConfig(learning_rate=training_config["learning_rate"]),

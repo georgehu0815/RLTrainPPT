@@ -5,6 +5,7 @@
 2. 测试下未训练过的模型： [original_model.py](original_model.py)
 3. 生成训练样本： [generate_topic.py](generate_topic.py)
 4. 开始训练,修改.env文件： [train.py](train.py)
+    - 训练时和测试时使用的prompt.py
 5. 测试模型训练效果: [model_test.py](model_test.py)
 
 ## 文件
@@ -14,6 +15,8 @@
 ├── generate_topic.py  ## 生成训练数据，使用的是Openai的Agent框架和Json的AgentOutputSchemaBase输出
 ├── model_test.py ## 训练后的模型进行测试
 ├── prompt.py  #训练时的prompt,生成大纲和评估大纲的奖励模型
+├── prompt_with_tool.py    #带搜索工具的prompt提示词，用于备份prompt.py
+├── prompt_without_tool.py    #不带工具搜索的提示词，用于备份prompt.py
 ├── requirements.txt
 ├── topic.json    #训练时需要的主题数据
 ├── original_model.py    #测试未经过训练的模型
