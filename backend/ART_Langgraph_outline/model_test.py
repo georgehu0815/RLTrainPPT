@@ -9,10 +9,10 @@
 import os
 import uuid
 import asyncio
-from textwrap import dedent
 from typing import List, Optional
 import dotenv
 import art
+import prompt
 from art.langgraph import init_chat_model, wrap_rollout
 from langgraph.prebuilt import create_react_agent
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -59,19 +59,6 @@ async def run_agent_test(model: art.Model, topic: str):
     """
     基于训练好的同名模型，按 topic 进行搜索并生成大纲
     """
-    system_prompt = dedent("""
-    你是“大纲生成智能体”。流程：先使用 web_search_tool 对 topic 进行检索与聚合，再输出中文 Markdown 大纲。
-    必须严格遵守以下格式与规则：
-    - 使用 Markdown 标题层级：# 标题 → ## 一级部分 → ### 二级小节 → 列表要点
-    - 一级部分数量：5个；每个一级部分下含3–4个二级小节
-    - 每个二级小节列出3–5个要点；要点使用短句、动词开头、不超过18字、不要句号
-    - 全文不写引言/结语/目录，不写解释性段落，不加任何额外说明
-    - 术语统一、风格一致，必要时加入可量化指标或示例
-    - 语言：简体中文
-    - 仅输出大纲本身，不输出“参考文献”等额外文字
-    生成后，调用 return_final_outline_tool(outline, source_urls) 提交结果，其中 source_urls 为你参考的高质量链接（3-8条）。
-    """)
-
     final_outline: Optional[str] = None
 
     @tool
@@ -97,8 +84,8 @@ async def run_agent_test(model: art.Model, topic: str):
     res = await agent.ainvoke(
         {
             "messages": [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=f"topic：{topic}\n请严格按规则生成大纲，并在完成后调用 return_final_outline_tool 提交。")
+                SystemMessage(content=prompt.ROLLOUT_SYSTEM_PROMPT),
+                HumanMessage(content=prompt.ROLLOUT_USER_PROMPT.format(topic=topic))
             ]
         },
         config={

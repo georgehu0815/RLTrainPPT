@@ -15,7 +15,9 @@ from statistics import mean
 from textwrap import dedent
 from typing import List, Optional
 import re
+import json
 import dotenv
+import prompt
 import art
 from art.langgraph import init_chat_model, wrap_rollout
 from art.utils import iterate_dataset
@@ -26,6 +28,7 @@ from pydantic import BaseModel, Field
 from tenacity import retry, stop_after_attempt
 from litellm import acompletion
 from zai import ZhipuAiClient
+from art.rewards import ruler_score_group
 
 # ---------------- wandb ----------------
 import wandb
@@ -37,8 +40,11 @@ NAME = os.getenv("ART_NAME", "web-search-outline")
 MODEL_NAME = os.getenv("ART_MODEL", "Qwen/Qwen2.5-0.5B-Instruct")
 PROJECT_NAME = os.getenv("ART_PROJECT", "web-search-outline-training")
 USE_LOCAL_BACKEND = os.getenv("ART_BACKEND", "local").lower() == "local"
+USE_RULER = os.getenv("USE_RULER", "true").lower() == "true"
+MAX_SEQ_LEN = int(os.getenv("MAX_SEQ_LEN", 4096))
 
-print(f"{NAME} - {MODEL_NAME} - {PROJECT_NAME} - {os.environ['WANDB_BASE_URL']}")
+print(f"{NAME} - {MODEL_NAME} - {PROJECT_NAME} - {os.environ['WANDB_BASE_URL']} - 很关键的USE_RULER: {USE_RULER}")
+print(f"训练时传入的最大序列长度: {MAX_SEQ_LEN}")
 
 # RULER 评估模型（可选；需相应 API Key）
 RULER_MODEL = os.getenv("RULER_MODEL", "openai/o4-mini")
@@ -80,7 +86,7 @@ async def search_web(keyword: str) -> List[WebSearchResult]:
         search_query=keyword,
         count=4,
         search_recency_filter="noLimit",
-        content_size="high"
+        content_size="medium"
     )
     if not response.search_result:
         return []
@@ -164,34 +170,26 @@ async def judge_correctness(s: Scenario, outline: str) -> CorrectnessJudgeRespon
     """
     使用一个小模型进行结构性与格式性判断（可选，仅做日志展示）。
     """
-    system_prompt = "作为评审，请判断以下 Markdown 是否满足给定结构与中文书写规范，仅输出 JSON。"
-    user = dedent(f"""
-    主题: {s.topic}
-    大纲:
-    {outline}
-
-    判定要点：
-    1) 标题层级：# 1个；## 恰好5个；每个##下有3–4个###；每个###下有3–5个以“- ”开头的要点；
-    2) 要点短句、动词开头、不超过18字；不以句号结尾；
-    3) 仅输出大纲，无引言/结语/目录/说明等；
-    4) 语言为简体中文；术语统一；允许包含可量化指标或示例。
-    如果基本满足则 accept=true，否则为 false，并说明原因。
-    """).strip()
-    try:
-        resp = await acompletion(
-            model="openai/gpt-4o-mini",
-            base_url="http://127.0.0.1:6688",
-            messages=[{"role": "system", "content": system_prompt},
-                      {"role": "user", "content": user}],
-            response_format=CorrectnessJudgeResponse,
-        )
-        return CorrectnessJudgeResponse.model_validate_json(
-            resp.choices[0].message.content or "{}"
-        )
-    except Exception:
-        # 回退到规则打分
-        score = _structure_score_cn(outline)
-        return CorrectnessJudgeResponse(reasoning=f"rule_score={score:.2f}", accept=score >= 0.7)
+    # system_prompt = prompt.JUDGE_SYSTEM_PROMPT
+    # user = prompt.JUDGE_USER_PROMPT.format(
+    #     topic=s.topic,
+    #     outline=outline,
+    # )
+    # try:
+    #     resp = await acompletion(
+    #         model=os.environ["JUDGE_MODEL_NAME"],
+    #         base_url=os.environ["JUDGE_MODEL_BASE_URL"],
+    #         messages=[{"role": "system", "content": system_prompt},
+    #                   {"role": "user", "content": user}],
+    #         response_format=CorrectnessJudgeResponse,
+    #     )
+    #     return CorrectnessJudgeResponse.model_validate_json(
+    #         resp.choices[0].message.content or "{}"
+    #     )
+    # except Exception:
+    # 回退到规则打分
+    score = _structure_score_cn(outline)
+    return CorrectnessJudgeResponse(reasoning=f"rule_score={score:.2f}", accept=score >= 0.7)
 
 # ---------- rollout：LangGraph + Tools ----------
 async def rollout(model: art.Model, web_search_scenario: WebSearchScenario) -> ProjectTrajectory:
@@ -203,19 +201,6 @@ async def rollout(model: art.Model, web_search_scenario: WebSearchScenario) -> P
         messages_and_choices=[],
         metadata={"scenario_id": scenario.id, "step": web_search_scenario.step},
     )
-
-    system_prompt = dedent("""
-    你是“大纲生成智能体”。目标：围绕用户给定的 topic，先使用 web_search_tool 进行信息检索与综合，再生成“中文 Markdown 大纲”。
-    必须严格遵循：
-    - 使用 Markdown 层级：# 标题 → ## 一级部分 → ### 二级小节 → 列表要点
-    - 一级部分数量：5个；每个一级部分下含3–4个二级小节
-    - 每个二级小节列出3–5个要点；要点使用短句、动词开头、不超过18字、不要句号
-    - 全文不写引言/结语/目录，不写解释性段落，不加任何额外说明
-    - 术语统一、风格一致，必要时加入可量化指标或示例
-    - 输出语言：简体中文
-    生成后必须调用 return_final_outline_tool(outline, source_urls) 提交结果，source_urls 提供3–8条高质量来源链接。
-    """)
-
     final_outline: Optional[FinalOutline] = None
 
     @tool
@@ -243,28 +228,30 @@ async def rollout(model: art.Model, web_search_scenario: WebSearchScenario) -> P
     await agent.ainvoke(
         {
             "messages": [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=f"topic：{scenario.topic}\n请严格按规则生成大纲，并在完成后调用 return_final_outline_tool 提交。")
+                SystemMessage(content=prompt.ROLLOUT_SYSTEM_PROMPT),
+                HumanMessage(content=prompt.ROLLOUT_USER_PROMPT.format(topic=scenario.topic))
             ]
         },
         config={"configurable": {"thread_id": str(uuid.uuid4())},
                 "recursion_limit": MAX_TURNS},
     )
-
+    # USE_RULER=False 时，这个 traj.reward 会直接参与训练；
+    # USE_RULER=True 时，这里设的 reward 会被后面 ruler_score_group(...) 生成的相对分所替换
     if final_outline:
         traj.final_outline = final_outline
-        print("[rollout] OUTLINE_PREVIEW ↓↓↓")
-        print(f"final_outline: {final_outline}")
-        print("[rollout] SOURCES:", ", ".join(final_outline.source_urls))
         try:
             judge = await judge_correctness(scenario, final_outline.outline)
             traj.metrics["pass_structure"] = float(judge.accept)
-            # 将规则分也记录到 metrics，便于 wandb 可视化
             traj.metrics["rule_score"] = _structure_score_cn(final_outline.outline)
-            print(f"[rollout] METRICS pass_structure={traj.metrics['pass_structure']} rule_score={traj.metrics['rule_score']:.2f}")
+            traj.reward = traj.metrics["rule_score"]
         except Exception:
-            pass
-
+            # 兜底：至少用纯规则分作为奖励
+            rs = _structure_score_cn(final_outline.outline)
+            traj.metrics["rule_score"] = rs
+            traj.reward = rs
+    else:
+        # 没有提交最终大纲的 rollout 给个低分，鼓励完成轨迹
+        traj.reward = 0.0
     return traj
 
 # ---------------- wandb: 日志封装 ----------------
@@ -365,12 +352,13 @@ async def main():
     model = art.TrainableModel(name=NAME, project=PROJECT_NAME, base_model=MODEL_NAME)
     await model.register(backend)
 
-    # 训练集：仅提供 topic，reference_outline 可选留空（训练采用相对比较/结构评估）
+    # 训练集：从 topic.json 文件加载
+    assert os.path.exists('topic.json'), "训练的主题数据不存在，请检查topic.json文件"
+    with open('topic.json', 'r', encoding='utf-8') as f:
+        topic_data = json.load(f)
     training_scenarios = [
-        Scenario(id="1", topic="AIGC 在医疗影像的应用与合规"),
-        Scenario(id="2", topic="边缘计算在智能制造的实施路径"),
-        Scenario(id="3", topic="量子计算基础与典型算法概览"),
-        Scenario(id="4", topic="RAG 在企业知识库的效果评估"),
+        Scenario(id=str(i), topic=topic)
+        for i, topic in enumerate(topic_data["topics"], 1)
     ]
 
     # 训练参数
@@ -399,11 +387,6 @@ async def main():
     )
 
     # 是否使用 RULER（若不可用会自动回退到相对比较）
-    try:
-        from art.rewards import ruler_score_group
-        use_ruler = True
-    except Exception:
-        use_ruler = False
 
     for batch in it:
         print(f"[train] step={batch.step} epoch={batch.epoch}")
@@ -422,25 +405,40 @@ async def main():
             max_exceptions=training_config["rollouts_per_group"] * len(batch.items),
         )
 
-        _log_batch_to_wandb(batch=batch, finished_groups=finished, use_ruler=use_ruler)
+        _log_batch_to_wandb(batch=batch, finished_groups=finished, use_ruler=USE_RULER)
 
-        if use_ruler:
+        if USE_RULER:
             extra_litellm_params = {"api_base": "http://localhost:6688", "api_key": os.environ["OPENAI_API_KEY"]}
             judged = []
             for g in finished:
-                # RULER 将比较同组候选，给予相对分；无需绝对参考答案
-                jg = await ruler_score_group(g, RULER_MODEL, extra_litellm_params=extra_litellm_params, debug=True)
-                judged.append(jg)
+                t_list = list(g)
+                completed = [t for t in t_list if getattr(t, "final_outline", None)]
+                try:
+                    # 完成数如果太少，那么就使用原始的reward打分结果
+                    if len(completed) >= 2:
+                        jg = await ruler_score_group(
+                            art.TrajectoryGroup(completed),
+                            RULER_MODEL,
+                            extra_litellm_params=extra_litellm_params,
+                            debug=True
+                        )
+                        judged.append(jg)
+                    else:
+                        # 完成数太少：直接用原始（含你在 rollout 里设的 reward）
+                        judged.append(art.TrajectoryGroup(t_list))
+                except Exception:
+                    # RULER 失效/异常时，退回无裁判训练
+                    judged.append(art.TrajectoryGroup(t_list))
 
             await model.train(
-                judged,
-                config=art.TrainConfig(learning_rate=training_config["learning_rate"]),
+                trajectory_groups=judged,
+                config=art.TrainConfig(learning_rate=training_config["learning_rate"], max_seq_len=MAX_SEQ_LEN),
                 _config={"logprob_calculation_chunk_size": 8},
             )
             wandb.log({"train/used_judged_groups": 1}, step=batch.step)
         else:
             await model.train(
-                finished,
+                trajectory_groups=finished,
                 config=art.TrainConfig(learning_rate=training_config["learning_rate"]),
             )
             wandb.log({"train/used_judged_groups": 0}, step=batch.step)
