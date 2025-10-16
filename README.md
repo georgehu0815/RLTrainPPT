@@ -1,5 +1,6 @@
 # RLTrainPPT: 基于强化学习的PPT Agent 训练模型
-## 本项目采用的是ART框架，现在特别依赖国外的网络环境，建议采用
+## 说明
+本项目采用的是ART框架，现在特别依赖国外的网络环境，建议采用
 https://github.com/johnson7788/EasyTrainAgent
 中的ms-swift框架，对国内训练环境更友好。
 
